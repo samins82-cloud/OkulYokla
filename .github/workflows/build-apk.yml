@@ -3,7 +3,10 @@ name: Build APK
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # Manuel tetikleme butonu
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -17,7 +20,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Java 17 Kur
         uses: actions/setup-java@v4
@@ -31,9 +33,8 @@ jobs:
       - name: NPM Paketleri Yükle
         run: npm install
 
-      - name: Capacitor Android Senkronize Et
-        run: |
-          npx cap sync android
+      - name: Capacitor Sync
+        run: npx cap sync android
 
       - name: Gradle İzinleri Ver
         run: chmod +x android/gradlew
@@ -41,16 +42,11 @@ jobs:
       - name: Debug APK Derle
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1
 
-      - name: APK Dosyasını Yükle
+      - name: APK Yükle
         uses: actions/upload-artifact@v4
         with:
           name: OkulYokla-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
-
-      - name: APK Boyutunu Göster
-        run: |
-          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
-          echo "✅ APK başarıyla derlendi!"
