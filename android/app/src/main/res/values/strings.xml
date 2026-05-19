@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">OkulYokla</string>
-    <string name="title_activity_main">OkulYokla</string>
-    <string name="package_name">com.okulyokla.app</string>
-    <string name="custom_url_scheme">com.okulyokla.app</string>
-</resources>
