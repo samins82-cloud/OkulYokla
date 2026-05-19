@@ -816,6 +816,29 @@ async function doLogin() {
     bindLoginEvents();
   }
 }
+window.ogrencileriExcel = function() {
+  const OZURSUZ_HAK = Number((APP.iletisim||{}).ozursuz_hak)||10;
+  const TOPLAM_HAK  = Number((APP.iletisim||{}).toplam_hak)||30;
+  const liste = APP.filter.ogrSinif
+    ? APP.ogrenciler.filter(o=>o.sinif_id==APP.filter.ogrSinif)
+    : APP.ogrenciler;
+  const wb = XLSX.utils.book_new();
+  const rows = [['No','Ad Soyad','Sınıf','Veli','Veli Tel','Öğrenci Tel','Özürsüz','Özürlü','Toplam','Hak Durumu']];
+  liste.sort((a,b)=>sinifAd(a.sinif_id).localeCompare(sinifAd(b.sinif_id))||a.ad.localeCompare(b.ad)).forEach(o=>{
+    const devL = ogrDevamsizlikGetir(o.id, o.sinif_id);
+    const oz  = devL.filter(v=>!v.ozurlu).length;
+    const ozr = devL.filter(v=>v.ozurlu).length;
+    const top = devL.length;
+    const hak = oz>=OZURSUZ_HAK ? 'Özürsüz hak doldu' : top>=TOPLAM_HAK ? 'Toplam hak doldu' : 'Normal';
+    rows.push([o.no||'',o.ad,sinifAd(o.sinif_id),o.veli_ad||'',o.veli_tel||'',o.ogr_tel||'',oz,ozr,top,hak]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [8,20,8,16,14,14,8,8,8,16].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws, 'Öğrenciler');
+  XLSX.writeFile(wb, 'ogrenciler_'+bugunTarih()+'.xlsx');
+  showToast('✅ Excel indirildi');
+};
+
 window.cikisYap = function() { APP.user=null; APP.page=''; render(); };
 
 window.veliIletisimKaydet = async function(ogrId) {
@@ -1336,6 +1359,7 @@ function pgOgrenciler() {
     <div class="page-title"><i class="ti ti-users"></i>Öğrenci Yönetimi</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-danger btn-sm" onclick="tumOgrencileriSil()"><i class="ti ti-trash"></i>Tüm Öğrencileri Sil</button>
+      <button class="btn btn-sm" onclick="ogrencileriExcel()"><i class="ti ti-file-spreadsheet"></i>Dışa Aktar</button>
       <button class="btn btn-success btn-sm" onclick="$('excelFile').click()" title="E-Okul OOG01001R020 veya standart Excel formatı"><i class="ti ti-upload"></i>Excel Yükle</button>
       <input type="file" id="excelFile" accept=".xls,.xlsx,.XLS,.XLSX" style="display:none" onchange="yukleExcelOgrenci()">
       <button class="btn btn-primary btn-sm" onclick="om('ogrEkle')"><i class="ti ti-plus"></i>Öğrenci Ekle</button>
@@ -1583,13 +1607,22 @@ function pgDersler() {
   <!-- Ders Listesi -->
   <div class="card" style="padding:0;overflow:hidden">
     <div class="tbl-wrap"><table>
-      <tr><th>Ders Adı</th><th>Kod</th><th>Görünüm</th><th></th></tr>
-      ${[...APP.dersler].sort((a,b)=>a.ad.localeCompare(b.ad,'tr')).map(d=>{const r=RENK_MAP[d.renk]||RENK_MAP.gray;return`<tr>
-        <td style="font-weight:600">${d.ad}</td>
-        <td><span class="badge b-gray">${d.kod}</span></td>
-        <td><span class="ders-chip" style="background:${r[0]};color:${r[1]}">${d.ad}</span></td>
-        <td><button class="btn btn-sm btn-danger" onclick="dersSil(${d.id})"><i class="ti ti-trash"></i></button></td>
-      </tr>`;}).join('')}
+      <tr><th>Ders Adı</th><th>Kod</th><th>Renk</th><th>Görünüm</th><th></th></tr>
+      ${[...APP.dersler].sort((a,b)=>a.ad.localeCompare(b.ad,'tr')).map(d=>{
+        const r=RENK_MAP[d.renk]||RENK_MAP.gray;
+        const renkler = Object.keys(RENK_MAP);
+        return`<tr>
+          <td><input value="${d.ad}" style="border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;font-weight:600;width:120px"
+            onchange="dersGuncelle(${d.id},'ad',this.value)" onblur="dersGuncelle(${d.id},'ad',this.value)"></td>
+          <td><input value="${d.kod}" style="border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;width:70px"
+            onchange="dersGuncelle(${d.id},'kod',this.value)"></td>
+          <td><select style="border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px"
+            onchange="dersGuncelle(${d.id},'renk',this.value)">
+            ${renkler.map(rk=>`<option value="${rk}" ${d.renk===rk?'selected':''}>${rk}</option>`).join('')}
+          </select></td>
+          <td><span class="ders-chip" style="background:${r[0]};color:${r[1]}">${d.ad}</span></td>
+          <td><button class="btn btn-sm btn-danger" onclick="dersSil(${d.id})"><i class="ti ti-trash"></i></button></td>
+        </tr>`;}).join('')}
     </table></div>
   </div>`;
 }
@@ -1722,8 +1755,12 @@ function ogrDevamsizlikGetir(ogrId, sinifId) {
   const importListesi = (APP.importDevamsizlik||{})[String(ogrId)]||[];
   importListesi.forEach(imp=>{
     if(!map[imp.tarih]){
-      // Import'tan gelen, yoklamada olmayan kayıt
       const maz = (APP.mazeretler[imp.tarih]||{})[ogrId]||null;
+      // say:false olan türler (DA,F,K,N,T,YA) devamsızlığa dahil değil — atla
+      const kural = getTurKural();
+      const kaynak = imp.kaynak||'';
+      const k = kural[kaynak];
+      if (k && k.say === false) return; // sayılmayan türler gösterilmesin
       map[imp.tarih] = {
         tarih: imp.tarih,
         saatler: [],
@@ -1734,7 +1771,6 @@ function ogrDevamsizlikGetir(ogrId, sinifId) {
         ozurlu: imp.ozurlu || !!(maz && maz.tur && maz.tur!=='__ozursuz__'),
       };
     }
-    // Yoklamada zaten varsa import bilgisini tamamla
   });
 
   return Object.values(map).sort((a,b)=>b.tarih.localeCompare(a.tarih));
@@ -2701,8 +2737,8 @@ window.importUygula = async function() {
   APP._importSonuc = {ok:true, mesaj};
   APP._importPreview = null;
   APP._importEslesme = null;
+  showToast(mesaj);
   render();
-  setTimeout(()=>showToast(mesaj), 50);
 };
 
 // ══════════════════════════════════════════════
@@ -5190,6 +5226,16 @@ window.dersKaydet = async function() {
     showToast('Ders eklendi','success');
   }
   cm();
+};
+
+window.dersGuncelle = async function(id, alan, deger) {
+  const ders = APP.dersler.find(d=>d.id==id);
+  if (!ders) return;
+  ders[alan] = deger;
+  const {error} = await sb.from('dersler').update({[alan]:deger}).eq('id',id);
+  if (error) { showToast('Güncelleme hatası: '+error.message,'error'); return; }
+  // Tüm sayfalara anlık yansısın
+  render();
 };
 
 window.dersSil = async function(id) {
